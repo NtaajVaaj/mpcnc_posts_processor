@@ -11,6 +11,10 @@ Some design points:
 - Tested with LCD display and SD card (built in tool change require printing from SD and LCD to restart)
 - Support for 3 different laser power using "cutting modes" (through, etch, vaporize)
 
+ASSUMES: 
+	- HOME position is not (0,0,0)
+	- Fan is installed on Ramps' D8 connector
+	- Fan is enabled at start of operation, and stopped at end of operation
 */
 
 
@@ -22,15 +26,18 @@ properties = {
   cutterOff: "M107",                // Gcode command to turn off the laser/plasma cutter
   travelSpeedXY: 2500,              // High speed for travel movements X & Y (mm/min)
   travelSpeedZ: 300,                // High speed for travel movements Z (mm/min)
-  setOriginOnStart: true,           // Set origin when gcode start (G92)
-  goOriginOnFinish: true,           // Go X0 Y0 Z0 at gcode end
+  setOriginOnStart: false,          // Set origin when gcode start (G92)
+  goOriginOnFinish: false,          // Go X0 Y0 Z0 at gcode end.  WILL BE OVERRIDEN BY goHomeOnFinish 
+  goHomeOnFinish: true,				// Go HOME at gcode end.  Overrides goOriginOnFinish
+  turnOffMotorsOnFinish: true,		// Turn off the steppers at gcode end.  MAKE SURE YOUR Z-AXIS DOESN'T 
+  									//   FALL UNDER NO POWER
   gcodeStartFile: "",               // File with custom Gcode for header/start (in nc folder)
   gcodeStopFile: "",                // File with custom Gcode for footer/end (in nc folder)
   gcodeToolFile: "",                // File with custom Gcode for tool change (in nc folder)
   gcodeProbeFile: "",               // File with custom Gcode for tool probe (in nc folder)
   toolChangeEnabled: true,          // Enable tool change code (bultin tool change requires LCD display)
   toolChangeXY: "X0 Y0",            // X&Y position for builtin tool change
-  toolChangeZ: "Z30",               // Z position for builtin tool change
+  toolChangeZ: "Z200",              // Z position for builtin tool change, should be some big number.
   toolChangeZProbe: true,           // Z probe after tool change
   probeOnStart: true                // Execute probe gcode to align tool
 };
@@ -79,14 +86,23 @@ function onOpen() {
 function onClose() {
 
   // End message to LCD
+  writeln("M107");  // turn OFF Controller Fan
   writeln("M400");
   writeln("M117 Job end");
 
   if(properties.gcodeStopFile == "") {
-    if(properties.goOriginOnFinish) {
+    if(properties.goHomeOnFinish) {
+      writeln("G28 Z"); 	// Home Z as to get it high enough clearance
+      writeln("G28 X Y");  	// Home X and Y 
+    }
+    else if (properties.goOriginOnFinish) {
       writeln("G1 X0 Y0" + fOutput.format(properties.travelSpeedXY)); // Go to XY origin
       writeln("G1 Z0" + fOutput.format(properties.travelSpeedZ)); // Go to Z origin
     }
+    
+	if(properties.turnOffMotorsOnFinish)  {
+    	writeln("M18"); // turn off motors to save power
+   	}
   } else {
     loadFile(properties.gcodeStopFile);
   }
@@ -105,7 +121,8 @@ function onSection() {
       writeln("M84 S0"); // Disable steppers timeout
       if(properties.setOriginOnStart) {
         writeln("G92 X0 Y0 Z0"); // Set origin to initial position
-      }
+      } 
+      writeln("M106 255");  // turn ON Controller Fan  
       writeln("");
     } else {
       loadFile(properties.gcodeStartFile);
